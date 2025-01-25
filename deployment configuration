@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guardian
+  namespace: nhs
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: guardian
+  template:
+    metadata:
+      labels:
+        app: guardian
+    spec:
+      containers:
+      - name: guardian
+        image: guardian:latest
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+          limits:
+            memory: "8Gi"
+            cpu: "4"
+        env:
+        - name: NHS_SPINE_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: nhs-credentials
+              key: spine-endpoint
+        - name: MODEL_PATH
+          value: "/models"
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: guardian-config
+          mountPath: /etc/guardian
+        - name: ml-models
+          mountPath: /models
+      volumes:
+      - name: guardian-config
+        configMap:
+          name: guardian-config
+      - name: ml-models
+        persistentVolumeClaim:
+          claimName: guardian-models-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guardian-service
+  namespace: nhs
+spec:
+  selector:
+    app: guardian
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: LoadBalancer
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: guardian-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  rules:
+  - host: guardian.nhs.uk
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: guardian-service
+            port:
+              number: 80
